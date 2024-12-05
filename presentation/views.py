@@ -1,17 +1,17 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from presentations.models.presentation import Presentation
-from presentations.models.template import Template
-from presentations.models.slide import Slide
-from presentations.serializers.presentation_serializer import PresentationSerializer
-from presentations.serializers.template_serializer import TemplateSerializer
-from presentations.serializers.slide_serializer import SlideSerializer
-from presentations.services.ai_content_generator import generate_presentation_content
-from presentations.services.pptx_handler import create_presentation_pptx
-from presentations.services.chart_generator import generate_chart
-from presentations.services.template_manager import get_template_by_id
-from presentations.services.image_generator import generate_image
+from presentation.models.presentation import Presentation
+from presentation.models.template import Template
+from presentation.models.slide import Slide
+from presentation.serializers.presentation_serializer import PresentationSerializer
+from presentation.serializers.template_serializer import TemplateSerializer
+from presentation.serializers.slide_serializer import SlideSerializer
+from presentation.services.ai_content_generator import generate_presentation_content
+from presentation.services.pptx_handler import create_presentation_pptx
+from presentation.services.chart_generator import generate_chart
+from presentation.services.template_manager import get_template_by_id
+from presentation.services.image_generator import generate_image
 
 
 class PresentationView(APIView):
