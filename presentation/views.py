@@ -7,53 +7,93 @@ from presentation.models.slide import Slide
 from presentation.serializers.presentation_serializer import PresentationSerializer
 from presentation.serializers.template_serializer import TemplateSerializer
 from presentation.serializers.slide_serializer import SlideSerializer
-from presentation.services.ai_content_generator import generate_presentation_content
-from presentation.services.pptx_handler import create_presentation_pptx
-from presentation.services.chart_generator import generate_chart
-from presentation.services.template_manager import get_template_by_id
-from presentation.services.image_generator import generate_image
+from presentation.services.ai_content_generator import AIContentGenerator
+from presentation.services.pptx_handler import PPTXHandler
+from presentation.services.chart_generator import ChartGenerator
+from presentation.services.image_generator import ImageGenerator
 
 
-class PresentationView(APIView):
+class TemplateListAPIView(APIView):
+    """
+    Barcha mavjud shablonlarni ro'yxatini qaytaruvchi API yaratib oldik.
+    """
+    def get(self, request):
+        templates = Template.objects.all()
+        serializer = TemplateSerializer(templates, many=True)
+        return Response(serializer.data)
+
+
+class PresentationListCreateAPIView(APIView):
+    """
+    Prezentatsiyalarni yaratish va ro'yxatlash uchun API yaratib oldik.
+    """
+    def get(self, request):
+        """
+        Mavjud barcha prezentatsiyalarni qaytaradi.
+        """
+        presentations = Presentation.objects.all()
+        serializer = PresentationSerializer(presentations, many=True)
+        return Response(serializer.data)
+
     def post(self, request):
-        data = request.data
-        title = data.get("title")
-        slides_count = int(data.get("slides_count", 5))
-        template_id = data.get("template_id")
+        """
+        Yangi prezentatsiya yaratadib olamiz .
+        """
+        serializer = PresentationSerializer(data=request.data)
+        if serializer.is_valid():
+            title = serializer.validated_data.get("title")  # Foydalanuvchi kiritgan mavzu
+            slides_count = serializer.validated_data.get("slides_count", 20)  # Default qiymati 20 slayd
+            template_id = serializer.validated_data.get("template_id")  # Tanlangan shablon IDsini validatsiua qilamiz
 
-        template = get_template_by_id(template_id)
-        if not template:
+            if slides_count > 20:
+                return Response(
+                    {"error": "Slides count cannot exceed 20."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Shablonni olish qismi
+            try:
+                template = Template.objects.get(id=template_id)
+            except Template.DoesNotExist:
+                return Response(
+                    {"error": "Template not found."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # **1. AI yordamida kontent generatsiyasi**
+            ai_generator = AIContentGenerator()
+            content = ai_generator.generate_content(title, slides_count)
+
+            # **2. Rasmlar generatsiyasi**
+            image_generator = ImageGenerator()
+            images = image_generator.generate_images(content)
+
+            # **3. Diagrammalar generatsiyasi**
+            chart_generator = ChartGenerator()
+            charts = chart_generator.generate_charts(content)
+
+            # **4. Slaydlarni yaratish**
+            slides = []
+            for slide_content, slide_image, slide_chart in zip(content, images, charts):
+                slide = Slide.objects.create(
+                    content=slide_content,
+                    image=slide_image,
+                    chart=slide_chart,
+                )
+                slides.append(slide)
+
+            # **5. PowerPoint faylini yaratish**
+            pptx_handler = PPTXHandler()
+            pptx_path = pptx_handler.create_presentation(slides, template)
+
+            # **6. Prezentatsiyani saqlash**
+            presentation = serializer.save(pptx_path=pptx_path)
+
             return Response(
-                {"error": "Template not found"}, status=status.HTTP_404_NOT_FOUND
+                {
+                    "detail": "Presentation created successfully.",
+                    "pptx_url": request.build_absolute_uri(pptx_path),
+                },
+                status=status.HTTP_201_CREATED,
             )
-
-        # AI orqali kontent yaratish qismi
-        slides_content = generate_presentation_content(title, slides_count)
-
-        # Prezentatsiya yaratish qismi
-        presentation = Presentation.objects.create(
-            title=title,
-            slides_count=slides_count,
-            template=template,
-        )
-
-        # Har bir slaydni saqlash
-        for slide in slides_content:
-            image_url = None
-            if slide.get("generate_image"):
-                image_url = generate_image(slide["content"])
-
-            Slide.objects.create(
-                presentation=presentation,
-                title=slide["title"],
-                content=slide["content"],
-                image_url=image_url,
-            )
-
-        # PowerPoint yaratiladi
-        pptx_path = create_presentation_pptx(presentation)
-
-        return Response(
-            {"message": "Presentation created", "pptx_path": pptx_path},
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
